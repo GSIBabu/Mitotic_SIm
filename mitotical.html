@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ხახვის ბოლქვს ფესვის უჯრედები მიკროსკოპული ხედი</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px; /* Keep max-width */
+            width: 100%; /* Allow shrinking */
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-sizing: border-box; /* Include padding in width */
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+            position: relative;
+            width: 100%; /* Ensure container takes width */
+        }
+        canvas {
+             border: 1px solid #ddd;
+             background-color: #fff;
+             border-radius: 4px;
+             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            /* Responsive styles */
+            display: block; /* Prevents extra space below */
+            width: 100%; /* Take full width of container */
+            max-width: 800px; /* Optional: limit max size */
+            height: auto; /* Maintain aspect ratio */
+            aspect-ratio: 800 / 600; /* Define aspect ratio */
+        }
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px; /* Space between buttons */
+            margin: 15px auto 5px;
+            flex-wrap: wrap; /* Allow buttons to wrap on small screens */
+        }
+        button {
+            background-color: #4a6fa5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: background-color 0.2s, transform 0.1s;
+            /* Removed display:block and margin:auto */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+        button:hover {
+            background-color: #365987;
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(1px);
+        }
+        /* Removed .info-panel styles */
+        /* Removed .phase-legend styles */
+        .stats-panel {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .stats-panel h3 {
+            margin-top: 0;
+            color: #4a6fa5;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+        }
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .stats-table th, .stats-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .stats-table th {
+            font-weight: 600;
+            color: #555;
+        }
+        .scale-bar-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px;
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .scale-bar {
+            height: 4px;
+            background-color: #000;
+            margin-bottom: 3px;
+        }
+        .scale-bar-label {
+            font-size: 11px;
+            color: #000;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ხახვის ფესვის უჯრედების მიკროსკოპიის რეალისტური სიმულაცია</h1>
+
+        <div class="canvas-container">
+            <canvas id="cellCanvas"></canvas> <!-- Removed fixed width/height -->
+        </div>
+
+        <div class="stats-panel" id="stats-panel">
+            <h3>ნიმუშის სერიული კოდი</h3>
+            <div id="stats-content">
+                <div style="font-family: monospace; padding: 10px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; word-wrap: break-word; max-height: 150px; overflow-y: auto;">
+                    <code id="dist-code">მონაცემების გენერირების მოლოდინში...</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="button-container">
+            <button id="loadControl">საკონტროლო პრეპარატის ჩატვირთვა</button>
+            <button id="loadExperimental">ექსპერიმენტული (G344) პრეპარატის ჩატვირთვა</button>
+        </div>
+
+        <!-- Legend Removed -->
+
+        <!-- Info Panel Removed -->
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get canvas and context
+            const canvas = document.getElementById('cellCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // State variable for current slide type
+            let currentSlideType = 'control'; // 'control' or 'experimental'
+
+            // Set fixed default settings
+            let cellSettings = {
+                density: 70,
+                sizeVariation: 20,
+                wallThickness: 2,
+                shapeIrregularity: 15
+            };
+
+            let nuclearSettings = {
+                size: 40, // Relative size (% of cell min dimension)
+                positionVariation: 15,
+                stainIntensity: 75,
+                stainVariation: 25
+            };
+
+            // Default distribution (will be overwritten by generation function)
+            let cellCycleDistribution = {};
+
+            let visualEffects = {
+                backgroundTint: 10,
+                noiseLevel: 15,
+                focusVariation: 20,
+                vignette: 0
+            };
+
+            // Cell data storage
+            let cells = [];
+            let cellCountByType = {};
+
+            // Color palette that mimics methylene blue staining
+            const colors = {
+                background: '#f8f6e9',
+                cellWall: '#d9d9d9',
+                cytoplasm: '#f0efe7',
+                nucleusInterphase: 'rgba(65, 105, 175, 0.7)',
+                nucleusProphase: 'rgba(65, 115, 185, 0.7)',
+                nucleusMetaphase: 'rgba(65, 125, 195, 0.7)',
+                nucleusAnaphase: 'rgba(65, 135, 205, 0.7)',
+                nucleusTelophase: 'rgba(65, 145, 215, 0.7)',
+                chromosomes: '#1a4785'
+            };
+
+            // Function to resize the canvas drawing buffer
+            function resizeCanvas() {
+                // Get the actual display size of the canvas element styled by CSS
+                const displayWidth = canvas.clientWidth;
+                // Calculate height based on aspect ratio (800/600 = 4/3)
+                const displayHeight = displayWidth * (600 / 800);
+
+                // Set the canvas drawing buffer size to match the display size
+                // This prevents blurring and ensures drawing logic uses correct dimensions
+                if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                    canvas.width = displayWidth;
+                    canvas.height = displayHeight;
+                    console.log(`Canvas resized to: ${canvas.width}x${canvas.height}`);
+                    return true; // Indicate that resize happened
+                }
+                return false; // Indicate no resize needed
+            }
+
+            // Function to generate random variation
+            function randomVariation(base, variationPercent) {
+                const variation = base * (variationPercent / 100);
+                return base + ((Math.random() * 2 - 1) * variation);
+            }
+
+            // Function to generate random cell cycle distribution based on slide type
+            function generateRandomDistribution(slideType) {
+                let distribution = {};
+
+                if (slideType === 'experimental') {
+                    // Experimental: Very low mitosis, almost all interphase
+                    const mitoticPercent = Math.random() < 0.6 ? 0 : (Math.random() < 0.8 ? 1 : 2); // 60% chance 0, 20% chance 1, 20% chance 2
+                    let remainingMitotic = mitoticPercent;
+
+                    distribution.interphase = 100 - mitoticPercent;
+                    distribution.prophase = 0;
+                    distribution.metaphase = 0;
+                    distribution.anaphase = 0;
+                    distribution.telophase = 0;
+
+                    // Distribute the few mitotic cells randomly if any
+                    const phases = ['prophase', 'metaphase', 'anaphase', 'telophase'];
+                    while (remainingMitotic > 0) {
+                        const phaseIndex = Math.floor(Math.random() * phases.length);
+                        distribution[phases[phaseIndex]]++;
+                        remainingMitotic--;
+                    }
+
+                } else { // Default to 'control'
+                    // Control: Normal distribution
+                    distribution = {
+                        interphase: 60 + Math.floor(Math.random() * 30), // 60-90%
+                        prophase: Math.floor(Math.random() * 15) + 2,    // 2-17%
+                        metaphase: Math.floor(Math.random() * 10) + 1,   // 1-11%
+                        anaphase: Math.floor(Math.random() * 8) + 1,     // 1-9%
+                        telophase: Math.floor(Math.random() * 5) + 1     // 1-6%
+                    };
+
+                    // Normalize to ensure they add up to 100%
+                    const total = Object.values(distribution).reduce((sum, val) => sum + val, 0);
+                    const factor = 100 / total;
+
+                    for (const phase in distribution) {
+                        distribution[phase] = Math.round(distribution[phase] * factor);
+                    }
+
+                    // Ensure the values sum to exactly 100% after rounding
+                    let sum = Object.values(distribution).reduce((acc, val) => acc + val, 0);
+                    let diff = 100 - sum;
+
+                    // Adjust interphase to make sum exactly 100%
+                    distribution.interphase += diff;
+                }
+
+                console.log(`Generated ${slideType} distribution:`, distribution);
+                return distribution;
+            }
+
+            // Distribute cell types based on percentages from a given distribution
+            function distributeCellTypes(totalCells, distribution) {
+                // Create array of cell types based on the provided distribution
+                let cellTypes = [];
+                for (const [phase, percent] of Object.entries(distribution)) {
+                    const count = Math.round((percent / 100) * totalCells);
+                    for (let i = 0; i < count; i++) {
+                        // Ensure we don't exceed totalCells due to rounding
+                        if (cellTypes.length < totalCells) {
+                            cellTypes.push(phase);
+                        }
+                    }
+                }
+
+                // Adjust if rounding caused minor discrepancies
+                while (cellTypes.length < totalCells) {
+                    cellTypes.push('interphase'); // Add missing as interphase
+                }
+                if (cellTypes.length > totalCells) {
+                    cellTypes = cellTypes.slice(0, totalCells); // Remove excess
+                }
+
+                // Shuffle cell types
+                for (let i = cellTypes.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [cellTypes[i], cellTypes[j]] = [cellTypes[j], cellTypes[i]];
+                }
+
+                return cellTypes; // Returns the shuffled array of types
+            }
+
+            // Function to update the statistics display
+            function updateStatistics() { // No need to pass totalCells, calculate from array
+                 // Recalculate counts from the actual 'cells' array
+                 let currentCounts = { interphase: 0, prophase: 0, metaphase: 0, anaphase: 0, telophase: 0, total: 0 };
+                 // Ensure 'cells' array exists and has content before counting
+                 if (cells && cells.length > 0) {
+                     cells.forEach(cell => {
+                         if (currentCounts.hasOwnProperty(cell.type)) {
+                             currentCounts[cell.type]++;
+                         }
+                     });
+                     currentCounts.total = cells.length; // Use actual cell count
+                 } else {
+                     console.log("UpdateStatistics called before cells were generated.");
+                     // Optionally display "Generating..." or similar
+                     const codeElement = document.getElementById('dist-code');
+                     if (codeElement) codeElement.textContent = "Generating...";
+                     return; // Exit if no cells to count
+                 }
+
+
+                // --- Generate the concatenated number code ---
+                let numericCode = '';
+                try {
+                    // Construct the string in PMATI order, numbers only
+                    numericCode += (currentCounts['prophase'] || 0);
+                    numericCode += (currentCounts['metaphase'] || 0);
+                    numericCode += (currentCounts['anaphase'] || 0);
+                    numericCode += (currentCounts['telophase'] || 0);
+                    numericCode += (currentCounts['interphase'] || 0);
+
+                    // Display the generated code
+                    const codeElement = document.getElementById('dist-code');
+                    if (codeElement) {
+                        codeElement.textContent = numericCode;
+                    }
+
+                } catch (e) {
+                     console.error("Error generating numeric code:", e);
+                     const codeElement = document.getElementById('dist-code');
+                    if (codeElement) {
+                        codeElement.textContent = "Error";
+                    }
+                }
+            }
+
+            // Function to generate cell grid with irregularity, based on slide type
+            function generateCells(slideType) {
+                // Ensure canvas dimensions are up-to-date before generating
+                resizeCanvas(); // Set canvas.width/height before calculations
+
+                // Generate distribution based on the slide type
+                const distribution = generateRandomDistribution(slideType);
+
+                cells = []; // Clear existing cells
+
+                // --- Calculate grid layout based on CURRENT canvas size ---
+                const targetCellCount = cellSettings.density;
+                const canvasArea = canvas.width * canvas.height; // Use current dimensions
+                 // Handle case where density might be zero or negative
+                 const avgCellArea = (targetCellCount > 0) ? canvasArea / targetCellCount : canvasArea;
+                 const baseCellSize = Math.sqrt(avgCellArea);
+
+                 const cols = Math.max(1, Math.floor(canvas.width / baseCellSize)); // Use current dimensions
+                 const rows = Math.max(1, Math.floor(canvas.height / baseCellSize)); // Use current dimensions
+                 const actualTotalCells = cols * rows;
+
+                 const cellWidthActual = canvas.width / cols; // Use current dimensions
+                 const cellHeightActual = canvas.height / rows; // Use current dimensions
+                 const paddingX = 0;
+                 const paddingY = 0;
+
+                // Get the list of cell types needed based on distribution percentages
+                const cellTypes = distributeCellTypes(actualTotalCells, distribution);
+
+                // --- Generate cell objects and populate the 'cells' array ---
+                let cellIndex = 0;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (cellIndex >= cellTypes.length) break;
+
+                        const width = randomVariation(cellWidthActual, cellSettings.sizeVariation * 0.7);
+                        const height = randomVariation(cellHeightActual, cellSettings.sizeVariation * 0.7);
+                        let x = c * cellWidthActual + paddingX;
+                        let y = r * cellHeightActual + paddingY;
+                        const maxPosIrregularity = Math.min(cellWidthActual, cellHeightActual) * (cellSettings.shapeIrregularity / 100) * 0.3;
+                        x += (Math.random() * 2 - 1) * maxPosIrregularity;
+                        y += (Math.random() * 2 - 1) * maxPosIrregularity;
+
+                        cells.push({
+                            x: x,
+                            y: y,
+                            width: width,
+                            height: height,
+                            type: cellTypes[cellIndex], // Assign type from the distributed list
+                            focusLevel: Math.random(),
+                            stainIntensity: randomVariation(nuclearSettings.stainIntensity, nuclearSettings.stainVariation) / 100,
+                            nucleusOffset: {
+                                x: randomVariation(0, nuclearSettings.positionVariation) - (nuclearSettings.positionVariation / 2),
+                                y: randomVariation(0, nuclearSettings.positionVariation) - (nuclearSettings.positionVariation / 2)
+                            }
+                            // Nucleus size will be calculated dynamically during drawing based on cell dimensions
+                        });
+                        cellIndex++;
+                    }
+                }
+
+                // Log the actual number of cells generated
+                console.log(`Generated ${cells.length} cells (${slideType}) for ${canvas.width}x${canvas.height}.`);
+
+                // *** Call updateStatistics HERE, after the 'cells' array is fully populated ***
+                updateStatistics();
+            }
+
+            // Draw the cellular view
+            function drawCells() {
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw background with tint
+                const tintLevel = visualEffects.backgroundTint / 100;
+                ctx.fillStyle = colors.background;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Add yellowish tint to background
+                    ctx.fillStyle = `rgba(255, 251, 214, ${tintLevel})`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Sort cells by focus level for a more realistic appearance
+                cells.sort((a, b) => a.focusLevel - b.focusLevel);
+
+                // Draw cells
+                for (const cell of cells) {
+                    drawCell(cell); // Pass cell object which has dimensions
+                }
+
+                // Apply noise overlay
+                applyNoise(); // Uses canvas.width/height
+
+                // Draw scale bar directly on canvas
+                drawScaleBar(); // Uses canvas.width/height
+            }
+
+            // Draw individual cell
+            function drawCell(cell) {
+                const x = cell.x;
+                const y = cell.y;
+                const width = cell.width;
+                const height = cell.height;
+                const type = cell.type;
+                const wallThickness = cellSettings.wallThickness;
+
+                // Calculate focus effect intensity (0-1)
+                const focusEffect = 1 - Math.abs(0.5 - cell.focusLevel) * (visualEffects.focusVariation / 50);
+
+                // Draw cell shape
+                ctx.fillStyle = colors.cytoplasm;
+
+                // Draw with slight blur based on focus level
+                if (focusEffect < 0.85) {
+                    ctx.filter = `blur(${(1 - focusEffect) * 2}px)`;
+                }
+
+                // Draw as polygon with slight irregularity
+                ctx.beginPath();
+                const corners = [
+                    { x: x, y: y },
+                    { x: x + width, y: y },
+                    { x: x + width, y: y + height },
+                    { x: x, y: y + height }
+                ];
+
+                // Add irregularity to corners
+                if (cellSettings.shapeIrregularity > 0) {
+                    for (let i = 0; i < corners.length; i++) {
+                        const maxOffset = cellSettings.shapeIrregularity / 2;
+                        corners[i].x += (Math.random() * maxOffset) - (maxOffset / 2);
+                        corners[i].y += (Math.random() * maxOffset) - (maxOffset / 2);
+                    }
+                }
+
+                // Draw cell polygon
+                ctx.moveTo(corners[0].x, corners[0].y);
+                for (let i = 1; i < corners.length; i++) {
+                    ctx.lineTo(corners[i].x, corners[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw cell wall
+                ctx.strokeStyle = colors.cellWall;
+                ctx.lineWidth = wallThickness;
+                ctx.stroke();
+
+                // Reset filter
+                ctx.filter = 'none';
+
+                // Draw nucleus or chromosomes based on cell type
+                drawNuclearStructures(cell, corners);
+            }
+
+            // Draw nucleus or chromosomes based on cell cycle stage
+            function drawNuclearStructures(cell, corners) {
+                const cellType = cell.type;
+                const stainIntensity = cell.stainIntensity;
+
+                // Calculate center of cell
+                const centerX = cell.x + (cell.width / 2);
+                const centerY = cell.y + (cell.height / 2);
+
+                // Apply nucleus position offset
+                const nucleusX = centerX + (cell.width * cell.nucleusOffset.x / 100);
+                const nucleusY = centerY + (cell.height * cell.nucleusOffset.y / 100);
+
+                // Calculate nucleus size based on the CURRENT cell size
+                const nucleusSize = Math.min(cell.width, cell.height) * (nuclearSettings.size / 100);
+
+                // Select color based on cell type
+                let nucleusColor;
+                switch (cellType) {
+                    case 'interphase':
+                        nucleusColor = colors.nucleusInterphase;
+                        break;
+                    case 'prophase':
+                        nucleusColor = colors.nucleusProphase;
+                        break;
+                    case 'metaphase':
+                        nucleusColor = colors.nucleusMetaphase;
+                        break;
+                    case 'anaphase':
+                        nucleusColor = colors.nucleusAnaphase;
+                        break;
+                    case 'telophase':
+                        nucleusColor = colors.nucleusTelophase;
+                        break;
+                    default:
+                        nucleusColor = colors.nucleusInterphase;
+                }
+                
+                // Adjust opacity based on stain intensity
+                const colorParts = nucleusColor.split(',');
+                const adjustedColor = `${colorParts[0]},${colorParts[1]},${colorParts[2].split(')')[0]}, ${stainIntensity})`;
+
+                // Calculate focus effect
+                const focusEffect = 1 - Math.abs(0.5 - cell.focusLevel) * (visualEffects.focusVariation / 50);
+
+                // Apply slight blur based on focus level
+                if (focusEffect < 0.9) {
+                    ctx.filter = `blur(${(1 - focusEffect) * 1.5}px)`;
+                }
+
+                // Draw different nuclear structures based on cell type
+                switch (cellType) {
+                    case 'interphase':
+                        drawInterphaseNucleus(nucleusX, nucleusY, nucleusSize, adjustedColor);
+                        break;
+                    case 'prophase':
+                        drawProphaseNucleus(nucleusX, nucleusY, nucleusSize, adjustedColor);
+                        break;
+                    case 'metaphase':
+                        drawMetaphaseChromosomes(nucleusX, nucleusY, nucleusSize, adjustedColor, cell);
+                        break;
+                    case 'anaphase':
+                        drawAnaphaseChromosomes(nucleusX, nucleusY, nucleusSize, adjustedColor, cell);
+                        break;
+                    case 'telophase':
+                        drawTelophaseNuclei(nucleusX, nucleusY, nucleusSize, adjustedColor, cell);
+                        break;
+                }
+
+                // Reset filter
+                ctx.filter = 'none';
+            }
+
+            // Draw interphase nucleus (round with nucleoli)
+            function drawInterphaseNucleus(x, y, size, color) {
+                    // Draw main nucleus
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, size/2, size/2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                // Draw nucleoli (1-3)
+                const nucleoliCount = Math.floor(Math.random() * 3) + 1;
+                const darkColor = colors.chromosomes;
+
+                        for (let i = 0; i < nucleoliCount; i++) {
+                            const nucleolusSize = size * 0.1;
+                            const angle = Math.random() * Math.PI * 2;
+                            const distance = Math.random() * (size * 0.25);
+
+                    ctx.fillStyle = darkColor;
+                            ctx.beginPath();
+                            ctx.arc(
+                                x + Math.cos(angle) * distance,
+                                y + Math.sin(angle) * distance,
+                                nucleolusSize,
+                                0, Math.PI * 2
+                            );
+                            ctx.fill();
+                     }
+
+                // Add texture/granularity to nucleus
+                    addNuclearTexture(x, y, size);
+            }
+
+            // Draw prophase nucleus with condensing chromosomes
+            function drawProphaseNucleus(x, y, size, color) {
+                    // Draw partially visible nuclear membrane with a slightly different appearance
+                    ctx.fillStyle = color;
+                    ctx.globalAlpha = 0.5; // More transparent than before
+                    ctx.beginPath();
+
+                    // Create slightly irregular nuclear envelope to show it breaking down
+                    const pointCount = 12;
+                    for (let i = 0; i < pointCount; i++) {
+                        const angle = (i / pointCount) * Math.PI * 2;
+                        const radiusVariation = 1 + (Math.random() * 0.3 - 0.15); // More variation
+                        const px = x + Math.cos(angle) * (size/2) * radiusVariation;
+                        const py = y + Math.sin(angle) * (size/2) * radiusVariation;
+
+                        if (i === 0) {
+                            ctx.moveTo(px, py);
+                        } else {
+                            ctx.lineTo(px, py);
+                        }
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+
+                // Add a subtle halo effect to indicate chromatin condensation
+                        const gradient = ctx.createRadialGradient(
+                            x, y, size * 0.2,
+                            x, y, size * 0.5
+                        );
+                gradient.addColorStop(0, 'rgba(217, 95, 135, 0.15)');
+                gradient.addColorStop(1, 'rgba(217, 95, 135, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                        ctx.fill();
+
+                // Draw condensing chromosomes - more distinct and prominent
+                        const chromosomeCount = 6 + Math.floor(Math.random() * 4); // More chromosomes
+                
+                        for (let i = 0; i < chromosomeCount; i++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const distance = Math.random() * (size * 0.35);
+                            const chrX = x + Math.cos(angle) * distance;
+                            const chrY = y + Math.sin(angle) * distance;
+                            const chrLength = size * (0.25 + Math.random() * 0.2); // Longer chromosomes
+
+                            // Draw chromosomes as thicker, more distinct structures
+                    ctx.strokeStyle = colors.chromosomes;
+                            ctx.lineWidth = size * (0.08 + Math.random() * 0.04); // Thicker
+                            ctx.lineCap = 'round';
+
+                            // Create more visible complex curved path for chromosome
+                            ctx.beginPath();
+                            
+                            // Start point
+                            const startX = chrX - chrLength/2 + (Math.random() * chrLength/4);
+                            const startY = chrY - chrLength/2 + (Math.random() * chrLength/4);
+                            
+                            // End point
+                            const endX = chrX + chrLength/2 - (Math.random() * chrLength/4);
+                            const endY = chrY + chrLength/2 - (Math.random() * chrLength/4);
+                            
+                            // Control points for bezier curve - creates more organic bends
+                            const cp1x = chrX + (Math.random() * chrLength/2 - chrLength/4);
+                            const cp1y = chrY + (Math.random() * chrLength/2 - chrLength/4);
+                            const cp2x = chrX + (Math.random() * chrLength/2 - chrLength/4);
+                            const cp2y = chrY + (Math.random() * chrLength/2 - chrLength/4);
+                            
+                            ctx.moveTo(startX, startY);
+                            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+                            ctx.stroke();
+                            
+                            // Add distinct chromosome bumps/irregularities - more prominent
+                            const bumpCount = Math.floor(Math.random() * 4) + 2; // More bumps
+                            for (let j = 0; j < bumpCount; j++) {
+                                const t = Math.random(); // Position along the curve (0-1)
+                                // Quadratic formula to find point along a bezier curve
+                                const bumpX = Math.pow(1-t, 3) * startX + 
+                                             3 * Math.pow(1-t, 2) * t * cp1x + 
+                                             3 * (1-t) * Math.pow(t, 2) * cp2x + 
+                                             Math.pow(t, 3) * endX;
+                                const bumpY = Math.pow(1-t, 3) * startY + 
+                                             3 * Math.pow(1-t, 2) * t * cp1y + 
+                                             3 * (1-t) * Math.pow(t, 2) * cp2y + 
+                                             Math.pow(t, 3) * endY;
+                                
+                                const bumpSize = size * (0.04 + Math.random() * 0.035); // Larger bumps
+                        ctx.fillStyle = colors.chromosomes;
+                                ctx.beginPath();
+                                ctx.arc(bumpX, bumpY, bumpSize, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                            
+                    // Add a slight glow effect around each chromosome
+                            ctx.save();
+                    ctx.shadowColor = 'rgba(217, 95, 135, 0.4)';
+                    ctx.shadowBlur = 3;
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                            ctx.restore();
+                    }
+
+                // Add texture with more contrast for prophase
+                addNuclearTexture(x, y, size, 0.25); // Increased intensity
+            }
+            
+            // Draw metaphase chromosome alignment
+            function drawMetaphaseChromosomes(x, y, size, color, cell) {
+                // Metaphase plate orientation (slight random variation)
+                const angle = (Math.random() * Math.PI/6) - (Math.PI/12);
+                const plateLength = Math.min(cell.width, cell.height) * 0.7;
+
+                // Draw faint spindle apparatus
+                    ctx.strokeStyle = 'rgba(230, 230, 230, 0.4)';
+                    ctx.lineWidth = 1;
+                
+                // Upper spindle fibers
+                const poleDistance = plateLength * 0.6;
+                const upperPoleX = x + Math.sin(angle) * poleDistance;
+                const upperPoleY = y - Math.cos(angle) * poleDistance;
+                
+                // Lower spindle fibers
+                const lowerPoleX = x - Math.sin(angle) * poleDistance;
+                const lowerPoleY = y + Math.cos(angle) * poleDistance;
+                
+                // Draw chromosomes at metaphase plate
+                const chromosomeCount = 5 + Math.floor(Math.random() * 3);
+                
+                for (let i = 0; i < chromosomeCount; i++) {
+                    // Position along metaphase plate with some variation
+                    const offset = ((i / (chromosomeCount-1)) - 0.5) * plateLength * 0.9;
+                    const posVariation = plateLength * 0.05; // Slight position variation
+                    const chrX = x + Math.cos(angle) * offset + (Math.random() * posVariation - posVariation/2);
+                    const chrY = y + Math.sin(angle) * offset + (Math.random() * posVariation - posVariation/2);
+                    
+                    // Draw thicker, worm-like chromosome pairs
+                    const chrWidth = size * (0.08 + Math.random() * 0.04); // Thicker
+                    const chrLength = size * (0.5 + Math.random() * 0.25); // Much longer chromosomes
+                    
+                    ctx.strokeStyle = colors.chromosomes;
+                    ctx.lineWidth = chrWidth;
+                    ctx.lineCap = 'round';
+                    
+                    // Draw chromosome pair with curvature
+                    // Sister chromatids - first chromatid
+                    const armLength = chrLength/2;
+                    const bendFactor = Math.random() * 0.3 + 0.1; // Random bend amount
+                    
+                    // First chromatid - greatly extended with multiple segments for worm-like appearance
+                    // Define segment points with increasing distance from center
+                    const segments = 3 + Math.floor(Math.random() * 2);
+                    let currentX = chrX;
+                    let currentY = chrY;
+                    
+                    // Draw upper arm segments (first chromatid)
+                    ctx.beginPath();
+                    ctx.moveTo(chrX, chrY);
+                    
+                    // Create multiple segments for more organic, extended appearance
+                    for (let s = 0; s < segments; s++) {
+                        // Direction tends upward and to one side
+                        const directionX = 0.2 + Math.random() * 0.4;
+                        const directionY = -0.4 - Math.random() * 0.3;
+                        
+                        // Each segment is a curved path
+                        const segmentLength = armLength / (segments * 0.7); // Longer segments
+                        
+                        // Control point for curve
+                        const cpX = currentX + directionX * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        const cpY = currentY + directionY * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        
+                        // End point
+                        const endX = currentX + directionX * segmentLength;
+                        const endY = currentY + directionY * segmentLength;
+                        
+                        // Draw curve
+                        ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                        
+                        // Update current position for next segment
+                        currentX = endX;
+                        currentY = endY;
+                    }
+                    ctx.stroke();
+                    
+                    // Reset to center for second arm of first chromatid
+                    currentX = chrX;
+                    currentY = chrY;
+                    
+                    // Draw lower arm segments (first chromatid)
+                    ctx.beginPath();
+                    ctx.moveTo(chrX, chrY);
+                    
+                    for (let s = 0; s < segments; s++) {
+                        // Direction tends downward and to one side
+                        const directionX = -0.2 - Math.random() * 0.4;
+                        const directionY = 0.4 + Math.random() * 0.3;
+                        
+                        const segmentLength = armLength / (segments * 0.7);
+                        
+                        const cpX = currentX + directionX * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        const cpY = currentY + directionY * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        
+                        const endX = currentX + directionX * segmentLength;
+                        const endY = currentY + directionY * segmentLength;
+                        
+                        ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                        
+                        currentX = endX;
+                        currentY = endY;
+                    }
+                    ctx.stroke();
+                    
+                    // Second chromatid - mirror of first but with variations
+                    // Reset to center
+                    currentX = chrX;
+                    currentY = chrY;
+                    
+                    // Draw upper arm segments (second chromatid)
+                    ctx.beginPath();
+                    ctx.moveTo(chrX, chrY);
+                    
+                    for (let s = 0; s < segments; s++) {
+                        // Direction tends upward and to opposite side of first chromatid
+                        const directionX = -0.2 - Math.random() * 0.4;
+                        const directionY = -0.4 - Math.random() * 0.3;
+                        
+                        const segmentLength = armLength / (segments * 0.7);
+                        
+                        const cpX = currentX + directionX * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        const cpY = currentY + directionY * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        
+                        const endX = currentX + directionX * segmentLength;
+                        const endY = currentY + directionY * segmentLength;
+                        
+                        ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                        
+                        currentX = endX;
+                        currentY = endY;
+                    }
+                    ctx.stroke();
+                    
+                    // Reset to center for second arm of second chromatid
+                    currentX = chrX;
+                    currentY = chrY;
+                    
+                    // Draw lower arm segments (second chromatid)
+                    ctx.beginPath();
+                    ctx.moveTo(chrX, chrY);
+                    
+                    for (let s = 0; s < segments; s++) {
+                        // Direction tends downward and to opposite side
+                        const directionX = 0.2 + Math.random() * 0.4;
+                        const directionY = 0.4 + Math.random() * 0.3;
+                        
+                        const segmentLength = armLength / (segments * 0.7);
+                        
+                        const cpX = currentX + directionX * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        const cpY = currentY + directionY * segmentLength * 0.8 + (Math.random() * segmentLength * 0.4 - segmentLength * 0.2);
+                        
+                        const endX = currentX + directionX * segmentLength;
+                        const endY = currentY + directionY * segmentLength;
+                        
+                        ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                        
+                        currentX = endX;
+                        currentY = endY;
+                    }
+                    ctx.stroke();
+                    
+                    // Add thicker regions to chromatids
+                    ctx.fillStyle = colors.chromosomes;
+                    // Center (centromere)
+                    ctx.beginPath();
+                    ctx.arc(chrX, chrY, chrWidth/1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add bumps/irregularities along the chromatids
+                    // Just add a few key bumps rather than trying to trace the entire path
+                    for (let c = 0; c < 2; c++) { // For each chromatid
+                        for (let a = 0; a < 2; a++) { // For each arm
+                            const dirX = (c === 0) ? (a === 0 ? 1 : -1) : (a === 0 ? -1 : 1);
+                            const dirY = (a === 0) ? -1 : 1;
+                            
+                            const bumpCount = Math.floor(Math.random() * 3) + 1;
+                            for (let b = 0; b < bumpCount; b++) {
+                                // Position along arm with exponential distribution (more toward ends)
+                                const dist = Math.pow(Math.random(), 1.5) * armLength * 0.9;
+                                const angleVar = Math.random() * Math.PI/6 - Math.PI/12;
+                                const bumpAngle = (dirX > 0 ? 0 : Math.PI) + (dirY > 0 ? Math.PI/2 : -Math.PI/2) + angleVar;
+                                
+                                const bumpX = chrX + Math.cos(bumpAngle) * dist;
+                                const bumpY = chrY + Math.sin(bumpAngle) * dist;
+                                
+                                const bumpSize = chrWidth * (0.4 + Math.random() * 0.4);
+                                ctx.beginPath();
+                                ctx.arc(bumpX, bumpY, bumpSize, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    }
+                    
+                    // Draw spindle fibers connecting to chromosomes
+                    ctx.strokeStyle = 'rgba(230, 230, 230, 0.4)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(upperPoleX, upperPoleY);
+                    ctx.lineTo(chrX, chrY);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lowerPoleX, lowerPoleY);
+                    ctx.lineTo(chrX, chrY);
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw anaphase chromosome separation
+            function drawAnaphaseChromosomes(x, y, size, color, cell) {
+                // Determine angle of division
+                const angle = (Math.random() * Math.PI/6) - (Math.PI/12);
+                
+                // Calculate cell boundaries with safety margin
+                const cellWidth = cell.width;
+                const cellHeight = cell.height;
+                const safetyMargin = Math.min(cellWidth, cellHeight) * 0.15; // 15% safety margin
+                
+                // Calculate maximum safe distance to ensure poles stay within cell boundaries
+                // This takes into account the angle of division
+                const maxHorizontalDistance = (cellWidth / 2) - safetyMargin;
+                const maxVerticalDistance = (cellHeight / 2) - safetyMargin;
+                
+                // Calculate the maximum safe distance in the direction of the angle
+                const cosAngle = Math.abs(Math.cos(angle));
+                const sinAngle = Math.abs(Math.sin(angle));
+                const maxSafeDistance = Math.min(
+                    maxHorizontalDistance / sinAngle,
+                    maxVerticalDistance / cosAngle
+                );
+                
+                // Use either the calculated safe distance or the desired separation distance, whichever is smaller
+                const desiredDistance = size * 1.6;
+                const separationDistance = Math.min(desiredDistance, maxSafeDistance * 2);
+                const poleDistanceFactor = 0.8;
+                
+                // Calculate pole positions with boundary constraints
+                const upperPoleX = x + Math.sin(angle) * Math.min(separationDistance * poleDistanceFactor / 2, maxSafeDistance);
+                const upperPoleY = y - Math.cos(angle) * Math.min(separationDistance * poleDistanceFactor / 2, maxSafeDistance);
+                const lowerPoleX = x - Math.sin(angle) * Math.min(separationDistance * poleDistanceFactor / 2, maxSafeDistance);
+                const lowerPoleY = y + Math.cos(angle) * Math.min(separationDistance * poleDistanceFactor / 2, maxSafeDistance);
+                
+                // Draw faint spindle apparatus
+                drawAnaphaseSpindle(upperPoleX, upperPoleY, lowerPoleX, lowerPoleY, cell.width);
+                
+                // Define chromosome parameters based on cell size
+                const chromosomeCount = 3 + Math.floor(Math.random() * 3);
+                const maxArmLength = size * 0.7; // Doubled from 0.35 to 0.7 to make chromosomes longer
+                const chrWidth = size * 0.04;  // Base thickness of chromosomes
+                
+                // Draw chromosomes at upper pole
+                drawPoleChromosomes(upperPoleX, upperPoleY, maxArmLength, chrWidth, true);
+                
+                // Draw chromosomes at lower pole
+                drawPoleChromosomes(lowerPoleX, lowerPoleY, maxArmLength, chrWidth, false);
+                
+                // Add some chromosomes in the middle that are still separating
+                const midChromosomeCount = Math.floor(Math.random() * 2); // 0-1 chromosomes in the middle
+                for (let i = 0; i < midChromosomeCount; i++) {
+                    const midX = (upperPoleX + lowerPoleX) / 2 + (Math.random() * size * 0.1 - size * 0.05);
+                    const midY = (upperPoleY + lowerPoleY) / 2 + (Math.random() * size * 0.1 - size * 0.05);
+                    const chrWidth = size * (0.04 + Math.random() * 0.02);
+
+                    // Draw separating chromosomes with doubled length
+                    drawSeparatingChromosome(midX, midY, size * 0.5, chrWidth);
+                }
+                
+                // Draw debug boundary indicators if needed (uncomment for debugging)
+                /*
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.rect(
+                    x - maxHorizontalDistance,
+                    y - maxVerticalDistance,
+                    maxHorizontalDistance * 2,
+                    maxVerticalDistance * 2
+                );
+                ctx.stroke();
+                */
+            }
+            
+            // Function to draw spindle apparatus for anaphase
+            function drawAnaphaseSpindle(upperX, upperY, lowerX, lowerY, cellWidth) {
+                    ctx.strokeStyle = 'rgba(230, 230, 230, 0.4)';
+                ctx.lineWidth = 1;
+
+                // Central spindle
+                ctx.beginPath();
+                ctx.moveTo(upperX, upperY);
+                ctx.lineTo(lowerX, lowerY);
+                ctx.stroke();
+                
+                // Spindle width at equator
+                const spindleWidth = cellWidth * 0.6;
+                
+                // Draw additional spindle fibers
+                const fiberCount = 8;
+                for (let i = 0; i < fiberCount; i++) {
+                    const offset = (i / (fiberCount - 1) - 0.5) * spindleWidth;
+                    
+                    // Fibers connecting upper pole to lower region
+                    ctx.beginPath();
+                    ctx.moveTo(upperX, upperY);
+                    ctx.lineTo(lowerX + offset, lowerY);
+                    ctx.stroke();
+                    
+                    // Fibers connecting lower pole to upper region
+                    ctx.beginPath();
+                    ctx.moveTo(lowerX, lowerY);
+                    ctx.lineTo(upperX + offset, upperY);
+                    ctx.stroke();
+                }
+            }
+            
+            // Function to draw chromosomes at a pole
+            function drawPoleChromosomes(poleX, poleY, maxArmLength, chrWidth, isUpperPole) {
+                const chromosomeCount = 3 + Math.floor(Math.random() * 3);
+
+                // Direction multiplier (1 for down, -1 for up)
+                const dirY = isUpperPole ? 1 : -1;
+                
+                // Calculate spread of chromosomes around pole
+                const maxSpread = maxArmLength * 2;
+                
+                for (let i = 0; i < chromosomeCount; i++) {
+                    // Calculate base position with even distribution around pole
+                    const angle = ((i / chromosomeCount) * Math.PI) - (Math.PI / 2);
+                    const spreadDistance = Math.random() * (maxSpread * 0.3) + (maxSpread * 0.05);
+                    const chrBaseX = poleX + Math.cos(angle) * spreadDistance;
+                    const chrBaseY = poleY + Math.sin(angle) * spreadDistance * 0.5; // Less vertical spread
+                    
+                    // Draw W-shaped chromosome with tips pointing toward opposite pole
+                    drawWChromosome(chrBaseX, chrBaseY, maxArmLength, chrWidth, dirY);
+                }
+            }
+            
+            // Function to draw a W-shaped chromosome
+            function drawWChromosome(baseX, baseY, maxArmLength, width, dirY) {
+                // Calculate actual arm length (with random variation) - longer chromosomes
+                const armLength = maxArmLength * (0.85 + Math.random() * 0.15); // Increased from (0.7 + Math.random() * 0.3)
+                
+                // Set chromosome color
+                ctx.strokeStyle = colors.chromosomes;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                
+                // Left arm of W
+                ctx.beginPath();
+                ctx.moveTo(baseX, baseY);
+                
+                // Create left leg with multiple segments for natural appearance
+                let leftX = baseX;
+                let leftY = baseY;
+                const leftSegments = 3 + Math.floor(Math.random() * 2); // Increased from 2 to 3 for more segments
+                const leftSegLength = armLength / leftSegments;
+                
+                for (let s = 0; s < leftSegments; s++) {
+                    // Direction tends toward opposite pole and leftward
+                    // Increase directional tendency for segments closer to the tip
+                    const verticalBias = 0.7 + (s / leftSegments) * 0.3; // Adjusted to be more vertical
+                    const horizontalBias = 0.4 - (s / leftSegments) * 0.2;
+                    const dirX = -horizontalBias - Math.random() * 0.2;
+                    const dirYMod = verticalBias + Math.random() * 0.2;
+                    
+                    // Control point
+                    const cpX = leftX + dirX * leftSegLength * 0.5 + (Math.random() * leftSegLength * 0.2 - leftSegLength * 0.1);
+                    const cpY = leftY + dirY * dirYMod * leftSegLength * 0.5 + (Math.random() * leftSegLength * 0.2 - leftSegLength * 0.1);
+                    
+                    // End point
+                    const endX = leftX + dirX * leftSegLength;
+                    const endY = leftY + dirY * dirYMod * leftSegLength;
+                    
+                    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                    
+                    leftX = endX;
+                    leftY = endY;
+                }
+                ctx.stroke();
+                
+                // Right arm of W
+                ctx.beginPath();
+                ctx.moveTo(baseX, baseY);
+                
+                // Create right leg with multiple segments
+                let rightX = baseX;
+                let rightY = baseY;
+                const rightSegments = 3 + Math.floor(Math.random() * 2); // Increased from 2 to 3 for more segments
+                const rightSegLength = armLength / rightSegments;
+                
+                for (let s = 0; s < rightSegments; s++) {
+                    // Direction tends toward opposite pole and rightward
+                    const verticalBias = 0.7 + (s / rightSegments) * 0.3; // Adjusted to be more vertical
+                    const horizontalBias = 0.4 - (s / rightSegments) * 0.2;
+                    const dirX = horizontalBias + Math.random() * 0.2;
+                    const dirYMod = verticalBias + Math.random() * 0.2;
+                    
+                    // Control point
+                    const cpX = rightX + dirX * rightSegLength * 0.5 + (Math.random() * rightSegLength * 0.2 - rightSegLength * 0.1);
+                    const cpY = rightY + dirY * dirYMod * rightSegLength * 0.5 + (Math.random() * rightSegLength * 0.2 - rightSegLength * 0.1);
+                    
+                    // End point
+                    const endX = rightX + dirX * rightSegLength;
+                    const endY = rightY + dirY * dirYMod * rightSegLength;
+                    
+                    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                    
+                    rightX = endX;
+                    rightY = endY;
+                }
+                ctx.stroke();
+                
+                // Add thickenings and irregularities
+                ctx.fillStyle = colors.chromosomes;
+                
+                // Thickening at the base point
+                ctx.beginPath();
+                ctx.arc(baseX, baseY, width * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add bumps along both arms
+                addChromosomeBumps(baseX, baseY, leftX, leftY, width);
+                addChromosomeBumps(baseX, baseY, rightX, rightY, width);
+            }
+            
+            // Function to add bumps/thickenings along chromosomes
+            function addChromosomeBumps(startX, startY, endX, endY, width) {
+                const bumpCount = 1 + Math.floor(Math.random() * 2);
+                
+                for (let b = 0; b < bumpCount; b++) {
+                    // Position along arm
+                    const t = (b + 1) / (bumpCount + 1);
+                    const bumpX = startX + (endX - startX) * t + (Math.random() * width - width/2);
+                    const bumpY = startY + (endY - startY) * t + (Math.random() * width - width/2);
+                    
+                    const bumpSize = width * (0.7 + Math.random() * 0.5);
+                    ctx.beginPath();
+                    ctx.arc(bumpX, bumpY, bumpSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Function to draw chromosome in the process of separation
+            function drawSeparatingChromosome(midX, midY, stretchLength, chrWidth) {
+                ctx.strokeStyle = colors.chromosomes;
+                ctx.lineWidth = chrWidth;
+                ctx.lineCap = 'round';
+                
+                // Upper chromatid - stretching upward with multiple segments
+                ctx.beginPath();
+                ctx.moveTo(midX, midY);
+                
+                let upperX = midX;
+                let upperY = midY;
+                const upperSegments = 3 + Math.floor(Math.random() * 2); // Increased from 2 to 3 segments
+                const upperSegLength = stretchLength / upperSegments;
+                
+                for (let s = 0; s < upperSegments; s++) {
+                    // Tendency upward but with wandering
+                    const dirX = (Math.random() * 2 - 1) * 0.4; // Reduced horizontal wandering
+                    const dirY = -1.2 - Math.random() * 0.4; // More vertical stretching
+                    
+                    const cpX = upperX + dirX * upperSegLength * 0.5 + (Math.random() * upperSegLength * 0.3 - upperSegLength * 0.15);
+                    const cpY = upperY + dirY * upperSegLength * 0.5 + (Math.random() * upperSegLength * 0.3 - upperSegLength * 0.15);
+                    
+                    const endX = upperX + dirX * upperSegLength;
+                    const endY = upperY + dirY * upperSegLength;
+                    
+                    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                    
+                    upperX = endX;
+                    upperY = endY;
+                }
+                ctx.stroke();
+                
+                // Lower chromatid - stretching downward with multiple segments
+                ctx.beginPath();
+                ctx.moveTo(midX, midY);
+                
+                let lowerX = midX;
+                let lowerY = midY;
+                const lowerSegments = 3 + Math.floor(Math.random() * 2); // Increased from 2 to 3 segments
+                const lowerSegLength = stretchLength / lowerSegments;
+                
+                for (let s = 0; s < lowerSegments; s++) {
+                    // Tendency downward but with wandering
+                    const dirX = (Math.random() * 2 - 1) * 0.4; // Reduced horizontal wandering
+                    const dirY = 1.2 + Math.random() * 0.4; // More vertical stretching
+                    
+                    const cpX = lowerX + dirX * lowerSegLength * 0.5 + (Math.random() * lowerSegLength * 0.3 - lowerSegLength * 0.15);
+                    const cpY = lowerY + dirY * lowerSegLength * 0.5 + (Math.random() * lowerSegLength * 0.3 - lowerSegLength * 0.15);
+                    
+                    const endX = lowerX + dirX * lowerSegLength;
+                    const endY = lowerY + dirY * lowerSegLength;
+                    
+                    ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                    
+                    lowerX = endX;
+                    lowerY = endY;
+                }
+                ctx.stroke();
+                
+                // Add thickening in the middle (centromere region)
+                ctx.fillStyle = colors.chromosomes;
+                ctx.beginPath();
+                ctx.arc(midX, midY, chrWidth * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add some thickening along the stretched chromatids
+                addChromosomeBumps(midX, midY, upperX, upperY, chrWidth);
+                addChromosomeBumps(midX, midY, lowerX, lowerY, chrWidth);
+            }
+            
+            // Draw telophase with reforming nuclei
+            function drawTelophaseNuclei(x, y, size, color, cell) {
+                // Use a horizontal division angle (0 angle)
+                const angle = 0; // Fixed to horizontal instead of random angle
+                const separationDistance = size * 1.2;
+                
+                // Calculate nucleus positions (horizontal alignment)
+                const upperNucleusX = x; // Center X position (no shift)
+                const upperNucleusY = y - separationDistance/2; // Upper position
+                const lowerNucleusX = x; // Center X position (no shift)
+                const lowerNucleusY = y + separationDistance/2; // Lower position
+                
+                // Draw forming cell plate/wall horizontally
+                ctx.strokeStyle = colors.cellWall;
+                ctx.lineWidth = 2;
+                const plateLength = Math.min(cell.width, cell.height) * 0.7;
+                
+                // Optional: Comment out this section to remove the line entirely
+                // Horizontal line instead of angled
+                ctx.beginPath();
+                const plateStartX = x - plateLength/2;
+                const plateStartY = y;
+                const plateEndX = x + plateLength/2;
+                const plateEndY = y;
+                
+                ctx.moveTo(plateStartX, plateStartY);
+                ctx.lineTo(plateEndX, plateEndY);
+                ctx.stroke();
+
+                // Draw reforming nuclei with irregular shapes - increased size by 20%
+                const nucleusSize = size * 0.48; // Increased from 0.4 to 0.48
+
+                // Upper nucleus - slightly irregular shape
+                ctx.fillStyle = color;
+                ctx.beginPath();
+
+                // Create irregular ellipse using multiple bezier curves
+                const upperPoints = [];
+                const upperPointCount = 8;
+                const upperRadius = nucleusSize/2;
+                
+                for (let i = 0; i < upperPointCount; i++) {
+                    const pointAngle = (i / upperPointCount) * Math.PI * 2;
+                    const radiusVariation = 1 + (Math.random() * 0.25 - 0.125); // ±12.5% variation
+                    const px = upperNucleusX + Math.cos(pointAngle) * upperRadius * radiusVariation;
+                    const py = upperNucleusY + Math.sin(pointAngle) * upperRadius * radiusVariation;
+                    upperPoints.push({x: px, y: py});
+                }
+                
+                // Draw irregular shape using bezier curves
+                ctx.moveTo(upperPoints[0].x, upperPoints[0].y);
+                for (let i = 0; i < upperPointCount; i++) {
+                    const p1 = upperPoints[i];
+                    const p2 = upperPoints[(i+1) % upperPointCount];
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                }
+                ctx.fill();
+                
+                // Lower nucleus - slightly irregular shape
+                ctx.beginPath();
+                
+                const lowerPoints = [];
+                const lowerPointCount = 8;
+                const lowerRadius = nucleusSize/2;
+                
+                for (let i = 0; i < lowerPointCount; i++) {
+                    const pointAngle = (i / lowerPointCount) * Math.PI * 2;
+                    const radiusVariation = 1 + (Math.random() * 0.25 - 0.125); // ±12.5% variation
+                    const px = lowerNucleusX + Math.cos(pointAngle) * lowerRadius * radiusVariation;
+                    const py = lowerNucleusY + Math.sin(pointAngle) * lowerRadius * radiusVariation;
+                    lowerPoints.push({x: px, y: py});
+                }
+                
+                // Draw irregular shape using bezier curves
+                ctx.moveTo(lowerPoints[0].x, lowerPoints[0].y);
+                for (let i = 0; i < lowerPointCount; i++) {
+                    const p1 = lowerPoints[i];
+                    const p2 = lowerPoints[(i+1) % lowerPointCount];
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                }
+                ctx.fill();
+                
+                // Add decondensing chromosomes as elongated, thread-like structures
+                    const chrCount = 2 + Math.floor(Math.random() * 2);
+
+                    // Upper nucleus chromosomes
+                for (let i = 0; i < chrCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * (nucleusSize * 0.3);
+                    const chrX = upperNucleusX + Math.cos(angle) * distance;
+                    const chrY = upperNucleusY + Math.sin(angle) * distance;
+
+                    // Draw decondensing chromosome with irregular shape and threads
+                    const chrWidth = size * (0.02 + Math.random() * 0.02);
+                    const chrLength = size * (0.08 + Math.random() * 0.12);
+
+                    ctx.fillStyle = colors.chromosomes;
+
+                    // Main body
+                    ctx.beginPath();
+                    ctx.arc(chrX, chrY, nucleusSize * 0.08, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Add thread-like extensions
+                    const threadCount = 1 + Math.floor(Math.random() * 3);
+
+                    for (let t = 0; t < threadCount; t++) {
+                        const threadAngle = Math.random() * Math.PI * 2;
+                        const threadLength = chrLength * (0.6 + Math.random() * 0.8);
+
+                        ctx.strokeStyle = colors.chromosomes;
+                        ctx.lineWidth = chrWidth * (0.5 + Math.random() * 0.5);
+                        ctx.lineCap = 'round';
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(chrX, chrY);
+                        
+                        // Create curved thread
+                        const cp1x = chrX + Math.cos(threadAngle) * threadLength * 0.3;
+                        const cp1y = chrY + Math.sin(threadAngle) * threadLength * 0.3;
+                        const cp2x = chrX + Math.cos(threadAngle) * threadLength * 0.6;
+                        const cp2y = chrY + Math.sin(threadAngle) * threadLength * 0.6;
+                        const endX = chrX + Math.cos(threadAngle) * threadLength;
+                        const endY = chrY + Math.sin(threadAngle) * threadLength;
+                        
+                        // Draw either a simple quadratic curve or more complex bezier curve
+                        if (Math.random() > 0.5) {
+                            ctx.quadraticCurveTo(cp1x, cp1y, endX, endY);
+                        } else {
+                            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+                        }
+                        
+                        ctx.stroke();
+                        
+                        // Sometimes add small thickness variations along threads
+                        if (Math.random() > 0.5) {
+                            const noduleCount = 1 + Math.floor(Math.random() * 2);
+                            for (let n = 0; n < noduleCount; n++) {
+                                const t = 0.3 + Math.random() * 0.6; // Position along thread (30-90%)
+                                // Approximate position on curve
+                                const nx = chrX + Math.cos(threadAngle) * threadLength * t;
+                                const ny = chrY + Math.sin(threadAngle) * threadLength * t;
+                                
+                                const noduleSize = chrWidth * (0.7 + Math.random() * 0.7);
+                                ctx.fillStyle = colors.chromosomes;
+                                ctx.beginPath();
+                                ctx.arc(nx, ny, noduleSize, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    }
+                }
+                
+                // Lower nucleus chromosomes with similar thread-like structures
+                for (let i = 0; i < chrCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * (nucleusSize * 0.3);
+                    const chrX = lowerNucleusX + Math.cos(angle) * distance;
+                    const chrY = lowerNucleusY + Math.sin(angle) * distance;
+                    
+                    // Draw decondensing chromosome with irregular shape and threads
+                    const chrWidth = size * (0.02 + Math.random() * 0.02);
+                    const chrLength = size * (0.08 + Math.random() * 0.12);
+                    
+                    ctx.fillStyle = colors.chromosomes;
+                    
+                    // Main body
+                    ctx.beginPath();
+                    ctx.arc(chrX, chrY, nucleusSize * 0.08, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add thread-like extensions
+                    const threadCount = 1 + Math.floor(Math.random() * 3);
+                    
+                    for (let t = 0; t < threadCount; t++) {
+                        const threadAngle = Math.random() * Math.PI * 2;
+                        const threadLength = chrLength * (0.6 + Math.random() * 0.8);
+                        
+                        ctx.strokeStyle = colors.chromosomes;
+                        ctx.lineWidth = chrWidth * (0.5 + Math.random() * 0.5);
+                        ctx.lineCap = 'round';
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(chrX, chrY);
+                        
+                        // Create curved thread with more complex path
+                        const segmentCount = 1 + Math.floor(Math.random() * 2);
+                        let currentX = chrX;
+                        let currentY = chrY;
+                        
+                        for (let s = 0; s < segmentCount; s++) {
+                            const segmentAngle = threadAngle + (Math.random() * Math.PI/4 - Math.PI/8);
+                            const segmentLength = threadLength / segmentCount;
+                            
+                            const cpX = currentX + Math.cos(segmentAngle) * segmentLength * 0.5 + (Math.random() * segmentLength * 0.3 - segmentLength * 0.15);
+                            const cpY = currentY + Math.sin(segmentAngle) * segmentLength * 0.5 + (Math.random() * segmentLength * 0.3 - segmentLength * 0.15);
+                            const endX = currentX + Math.cos(segmentAngle) * segmentLength;
+                            const endY = currentY + Math.sin(segmentAngle) * segmentLength;
+                            
+                            ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+                            
+                            currentX = endX;
+                            currentY = endY;
+                        }
+                        
+                        ctx.stroke();
+                        
+                        // Sometimes add small thickness variations along threads
+                        if (Math.random() > 0.5) {
+                            const noduleCount = 1 + Math.floor(Math.random() * 2);
+                            for (let n = 0; n < noduleCount; n++) {
+                                const t = 0.3 + Math.random() * 0.6; // Position along thread (30-90%)
+                                // Approximate position on curve
+                                const nx = chrX + Math.cos(threadAngle) * threadLength * t;
+                                const ny = chrY + Math.sin(threadAngle) * threadLength * t;
+                                
+                                const noduleSize = chrWidth * (0.7 + Math.random() * 0.7);
+                                ctx.fillStyle = colors.chromosomes;
+                                ctx.beginPath();
+                                ctx.arc(nx, ny, noduleSize, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add texture to nuclear structures
+            function addNuclearTexture(x, y, size, intensityModifier = 0.15) {
+                // Add granular texture to mimic chromatin structure - adjusted for methylene blue
+                ctx.fillStyle = `rgba(50, 70, 150, ${intensityModifier})`;
+
+                    const granuleCount = Math.floor(size);
+                    for (let i = 0; i < granuleCount; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = Math.random() * (size * 0.4);
+                        const granuleX = x + Math.cos(angle) * distance;
+                        const granuleY = y + Math.sin(angle) * distance;
+                        const granuleSize = Math.random() * size * 0.04 + size * 0.01;
+                        
+                        ctx.beginPath();
+                        ctx.arc(granuleX, granuleY, granuleSize, 0, Math.PI * 2);
+                        ctx.fill();
+                 }
+             }
+
+            // Apply noise overlay to simulate microscopy artifacts
+            function applyNoise() {
+                const noiseIntensity = visualEffects.noiseLevel / 100;
+
+                // Create noise overlay
+                for (let y = 0; y < canvas.height; y += 4) {
+                    for (let x = 0; x < canvas.width; x += 4) {
+                        if (Math.random() < noiseIntensity * 0.3) {
+                            const size = Math.random() * 2 + 1;
+                            const gray = Math.floor(Math.random() * 50) + 200;
+
+                            ctx.fillStyle = `rgba(${gray}, ${gray}, ${gray}, 0.05)`;
+                            ctx.fillRect(x, y, size, size);
+                        }
+                    }
+                }
+
+                // Add occasional dark spots (dust simulation)
+                for (let i = 0; i < canvas.width * canvas.height * 0.0001 * noiseIntensity; i++) {
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    const size = Math.random() * 3 + 1;
+
+                    ctx.fillStyle = `rgba(30, 30, 30, ${Math.random() * 0.2})`;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Apply vignette effect - empty function
+            function applyVignette() {
+                // Function emptied to remove vignette effect
+            }
+
+            // Function to draw a scale bar directly on the canvas
+            function drawScaleBar() {
+                // Recalculate average cell size based on current canvas dimensions
+                const canvasArea = canvas.width * canvas.height;
+                const avgCellArea = (cellSettings.density > 0) ? canvasArea / cellSettings.density : canvasArea;
+                const baseCellSize = Math.sqrt(avgCellArea); // This now reflects current canvas size
+
+                // Set the scale bar to represent 100 µm
+                const referenceMicrons = 100;
+                const avgCellMicrons = 75; // Assumption about typical cell size in µm
+                const scaleBarLengthPixels = baseCellSize * (referenceMicrons / avgCellMicrons);
+
+                // Position in bottom right
+                const margin = 20; // Use fixed margin for now
+                const barHeight = 3;
+                const labelPadding = 8;
+                const textFont = '600 12px "Segoe UI", Arial, sans-serif'; // Define font once
+
+                // Measure text width
+                ctx.font = textFont;
+                const textMetrics = ctx.measureText(`${referenceMicrons} µm`);
+                const textWidth = textMetrics.width;
+
+                // Ensure scale bar + label doesn't overflow small screens (basic check)
+                const minMargin = 10;
+                const availableWidth = canvas.width - 2 * minMargin;
+                let finalScaleBarLength = scaleBarLengthPixels;
+
+                if (finalScaleBarLength + textWidth + labelPadding > availableWidth) {
+                    // Avoid making the scale inaccurate, just let it potentially clip or overflow slightly on very small screens
+                    // Or adjust positioning logic if this becomes an issue.
+                    console.warn("Scale bar might overflow on very narrow screens.");
+                }
+
+                const barX = canvas.width - margin - textWidth - labelPadding - finalScaleBarLength;
+                const barY = canvas.height - margin;
+
+                // Draw elegant background with drop shadow
+                ctx.save();
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+                ctx.shadowBlur = 6;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+
+                // Rounded rectangle background
+                const bgPadding = 8;
+                const totalWidth = finalScaleBarLength + textWidth + labelPadding + bgPadding*2;
+                const totalHeight = barHeight + bgPadding*4;
+                ctx.fillStyle = 'rgba(230, 230, 230, 0.85)';
+                ctx.beginPath();
+                ctx.roundRect(
+                    barX - bgPadding,
+                    barY - totalHeight + bgPadding,
+                    totalWidth,
+                    totalHeight,
+                    5
+                );
+                ctx.fill();
+                ctx.restore(); // Remove shadow for bar and text
+
+                // Calculate vertical center of background
+                const verticalCenter = barY - totalHeight/2 + bgPadding/2;
+
+                // Draw scale bar with endpoints
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(barX, verticalCenter - barHeight/2, finalScaleBarLength, barHeight);
+
+                // Vertical endpoints
+                const tickHeight = 7;
+                const tickWidth = 1;
+                ctx.fillRect(barX - tickWidth/2, verticalCenter - tickHeight/2, tickWidth, tickHeight);
+                ctx.fillRect(barX + finalScaleBarLength - tickWidth/2, verticalCenter - tickHeight/2, tickWidth, tickHeight);
+
+                // Draw text
+                ctx.font = textFont;
+                ctx.fillStyle = '#000000';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(
+                    `${referenceMicrons} µm`,
+                    barX + finalScaleBarLength + labelPadding,
+                    verticalCenter
+                );
+            }
+
+            // Modified resize handler with debouncing
+            function handleResize() {
+                console.log("Window resize detected");
+                if (resizeCanvas()) { // Check if canvas dimensions actually changed
+                    console.log(`Canvas dimensions changed, regenerating ${currentSlideType} slide and redrawing...`);
+                     generateCells(currentSlideType); // Regenerate based on new size AND current type
+                     drawCells();     // Redraw with new cells/layout
+                 } else {
+                    console.log("Canvas dimensions unchanged, skipping regeneration/redraw.");
+                 }
+            }
+
+            // Initialize UI controls
+            function initUI() {
+                // Control slide button
+                document.getElementById('loadControl').addEventListener('click', function() {
+                    currentSlideType = 'control';
+                    generateCells(currentSlideType);
+                    drawCells();
+                });
+
+                // Experimental slide button
+                document.getElementById('loadExperimental').addEventListener('click', function() {
+                    currentSlideType = 'experimental';
+                    generateCells(currentSlideType);
+                    drawCells();
+                });
+
+                // Add window resize listener with debouncing
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    // Wait 150ms after the last resize event before executing handler
+                    resizeTimeout = setTimeout(handleResize, 150);
+                });
+            }
+
+            // Initialize the application
+            function init() {
+                initUI();
+                // Initial setup: resize canvas, generate cells based on size, draw cells
+                 resizeCanvas(); // Set initial size correctly
+                 currentSlideType = 'control'; // Set initial type
+                 generateCells(currentSlideType); // Generate based on initial size and type
+                 drawCells();     // Draw initial view
+            }
+
+            // Start the application
+            init();
+        });
+    </script>
+</body>
+</html>
